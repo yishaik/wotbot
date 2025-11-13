@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Smoke test /health
+        env:
+          OPENAI_API_KEY: test
+        run: |
+          python - << 'PY'
+          from wotbot.app import create_app
+          from starlette.testclient import TestClient
+          app = create_app()
+          client = TestClient(app)
+          r = client.get('/health')
+          assert r.status_code == 200, r.text
+          print('health ok:', r.json().get('status'))
+          PY
+
+      - name: Build Docker image
+        run: |
+          docker build -t wotbot:ci .
+
