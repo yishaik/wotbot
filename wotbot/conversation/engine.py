@@ -64,12 +64,22 @@ class ConversationEngine:
         return ["Unknown command. Try /help"]
 
     def converse(self, user_id: str, text: str) -> List[str]:
+        # Backwards-compatible: text-only input
+        return self.converse_parts(user_id, [{"type": "text", "text": text}])
+
+    def converse_parts(self, user_id: str, content_parts: List[Dict[str, Any]]) -> List[str]:
         dev_default = settings.developer_mode_default
         if dev_default and not self.sessions.get(user_id).developer_mode:
             self.sessions.set_developer_mode(user_id, True)
 
-        if text.strip().startswith("/"):
-            return self.handle_command(user_id, text)
+        # Extract leading text for command detection
+        first_text = ""
+        for p in content_parts or []:
+            if isinstance(p, dict) and p.get("type") == "text" and p.get("text"):
+                first_text = p.get("text", "")
+                break
+        if first_text.strip().startswith("/"):
+            return self.handle_command(user_id, first_text)
 
         # Build system prompt
         system_prompt = settings.assistant_instructions or (
@@ -84,10 +94,12 @@ class ConversationEngine:
         messages: List[Dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         for m in history[-10:]:  # trim to last 10 exchanges to keep light
             messages.append({"role": m.role, "content": m.content})
-        messages.append({"role": "user", "content": text})
+        # Use typed parts (may include images) for current message
+        messages.append({"role": "user", "content": content_parts})
 
         # Store user message
-        self.sessions.append(user_id, "user", text)
+        # Store only a text marker for history to keep it simple
+        self.sessions.append(user_id, "user", first_text or "(non-text message)")
 
         # Choose backend
         if settings.openai_use_assistants:

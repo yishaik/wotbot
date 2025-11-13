@@ -68,17 +68,28 @@ def _format_responses_input(messages: List[Dict[str, Any]]) -> List[Dict[str, An
         role = m.get("role", "user")
         content = m.get("content", "")
         if role == "tool":
-            # Tool output is handled via submit_tool_outputs, not input stream
+            # Tool output is handled via submit_tool_outputs
             continue
+        norm_role = role if role in {"user", "assistant", "system"} else "user"
+        parts: List[Dict[str, Any]] = []
         if isinstance(content, list):
-            text = "\n".join(str(p.get("text", "")) if isinstance(p, dict) else str(p) for p in content)
+            for part in content:
+                if isinstance(part, dict) and part.get("type") == "image_url":
+                    url = part.get("image_url", {}).get("url")
+                    if url:
+                        parts.append({"type": "input_image", "image_url": {"url": url}})
+                elif isinstance(part, dict) and part.get("type") == "text":
+                    t = str(part.get("text", ""))
+                    if t:
+                        parts.append({"type": "input_text" if norm_role in {"user", "system"} else "output_text", "text": t})
+                else:
+                    t = str(part)
+                    if t:
+                        parts.append({"type": "input_text" if norm_role in {"user", "system"} else "output_text", "text": t})
         else:
-            text = str(content or "")
-        ctype = "input_text" if role in {"user", "system"} else "output_text"
-        out.append({
-            "role": role if role in {"user", "assistant", "system"} else "user",
-            "content": [{"type": ctype, "text": text}],
-        })
+            t = str(content or "")
+            parts.append({"type": "input_text" if norm_role in {"user", "system"} else "output_text", "text": t})
+        out.append({"role": norm_role, "content": parts})
     return out
 
 
