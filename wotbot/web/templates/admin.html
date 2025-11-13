@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>WotBot Admin</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; }
+      .container { max-width: 900px; margin: 0 auto; }
+      h1 { margin-bottom: 0.5rem; }
+      form { display: grid; grid-template-columns: 1fr 2fr; gap: 0.6rem 1rem; }
+      label { font-weight: 600; }
+      input[type=text], input[type=password], textarea { width: 100%; padding: 0.5rem; }
+      .row { grid-column: 1 / -1; margin-top: 1rem; }
+      .actions { display: flex; gap: 1rem; }
+      .divider { grid-column: 1 / -1; height: 1px; background: #ddd; margin: 0.8rem 0; }
+      .hint { color: #666; font-size: 0.9rem; }
+      .switch { display: flex; align-items: center; gap: 0.5rem; }
+      button { padding: 0.6rem 1rem; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>WotBot Admin</h1>
+      <p class="hint">Update runtime configuration. Secrets are masked; leave them blank to keep existing values.</p>
+      <form method="post">
+        <div class="divider"></div>
+        <label for="OPENAI_API_KEY">OpenAI API Key</label>
+        <input type="password" id="OPENAI_API_KEY" name="OPENAI_API_KEY" value="{{ OPENAI_API_KEY }}" />
+
+        <label for="OPENAI_MODEL">OpenAI Model</label>
+        <input type="text" id="OPENAI_MODEL" name="OPENAI_MODEL" value="{{ OPENAI_MODEL }}" />
+
+        <label for="OPENAI_USE_ASSISTANTS">Use Assistants</label>
+        <div class="switch">
+          <input type="checkbox" id="OPENAI_USE_ASSISTANTS" name="OPENAI_USE_ASSISTANTS" {% if OPENAI_USE_ASSISTANTS %}checked{% endif %} />
+          <span class="hint">If on, uses Assistants API with tool calling.</span>
+        </div>
+
+        <label for="OPENAI_ASSISTANT_ID">Assistant ID</label>
+        <input type="text" id="OPENAI_ASSISTANT_ID" name="OPENAI_ASSISTANT_ID" value="{{ OPENAI_ASSISTANT_ID }}" />
+
+        <div class="divider"></div>
+        <label for="TWILIO_ACCOUNT_SID">Twilio Account SID</label>
+        <input type="password" id="TWILIO_ACCOUNT_SID" name="TWILIO_ACCOUNT_SID" value="{{ TWILIO_ACCOUNT_SID }}" />
+
+        <label for="TWILIO_AUTH_TOKEN">Twilio Auth Token</label>
+        <input type="password" id="TWILIO_AUTH_TOKEN" name="TWILIO_AUTH_TOKEN" value="{{ TWILIO_AUTH_TOKEN }}" />
+
+        <label for="TWILIO_WHATSAPP_FROM">WhatsApp From</label>
+        <input type="text" id="TWILIO_WHATSAPP_FROM" name="TWILIO_WHATSAPP_FROM" value="{{ TWILIO_WHATSAPP_FROM }}" />
+
+        <label for="TWILIO_VALIDATE_SIGNATURE">Validate Signature</label>
+        <div class="switch">
+          <input type="checkbox" id="TWILIO_VALIDATE_SIGNATURE" name="TWILIO_VALIDATE_SIGNATURE" {% if TWILIO_VALIDATE_SIGNATURE %}checked{% endif %} />
+          <span class="hint">Requires PUBLIC_BASE_URL to match your webhook URL.</span>
+        </div>
+
+        <label for="PUBLIC_BASE_URL">Public Base URL</label>
+        <input type="text" id="PUBLIC_BASE_URL" name="PUBLIC_BASE_URL" value="{{ PUBLIC_BASE_URL }}" />
+
+        <div class="divider"></div>
+        <label for="ALLOW_HTTP_DOMAINS">Allowlist Domains</label>
+        <input type="text" id="ALLOW_HTTP_DOMAINS" name="ALLOW_HTTP_DOMAINS" value="{{ ALLOW_HTTP_DOMAINS }}" />
+
+        <label for="ADMIN_PHONE_NUMBERS">Admin Phone Numbers</label>
+        <textarea id="ADMIN_PHONE_NUMBERS" name="ADMIN_PHONE_NUMBERS" rows="3">{{ ADMIN_PHONE_NUMBERS }}</textarea>
+
+        <div class="row actions">
+          <button type="submit">Save Changes</button>
+          <button type="button" onclick="restart()">Restart Service</button>
+        </div>
+      </form>
+    </div>
+    <script>
+      async function restart() {
+        const res = await fetch('./restart', {method: 'POST'});
+        if (res.ok) alert('Restart scheduled.'); else alert('Restart failed.');
+      }
+    </script>
+  </body>
+  </html>
+
