@@ -58,22 +58,21 @@ def _run_python(code: str) -> Dict[str, Any]:
 
 def _run_javascript(code: str) -> Dict[str, Any]:
     # Minimal JS sandbox using Node's vm with timeout
-    js_driver = f"""
+    js_driver = """
 const vm = require('vm');
-const util = require('util');
 let code = ``;
 process.stdin.setEncoding('utf8');
 process.stdin.on('data', c => code += c);
 process.stdin.on('end', () => {
   try {
     const ctx = {console: {log: (...args)=>{}}, Math: Math};
-    const script = new vm.Script(code, {timeout: {timeout: {}}});
     const sandbox = vm.createContext(ctx);
+    const script = new vm.Script(code);
     const res = script.runInContext(sandbox, {timeout: %d});
     const out = {ok: true, result: typeof res === 'undefined' ? null : res};
     process.stdout.write(JSON.stringify(out));
   } catch (e) {
-    process.stdout.write(JSON.stringify({ok:false, error: String(e.message || e)}));
+    process.stdout.write(JSON.stringify({ok:false, error: String(e && e.message ? e.message : e)}));
   }
 });
 """ % (settings.code_exec_timeout_sec * 1000)
@@ -102,4 +101,3 @@ process.stdin.on('end', () => {
             return {"ok": False, "error": "Node.js not available"}
         except subprocess.TimeoutExpired:
             return {"ok": False, "error": "Timeout"}
-
