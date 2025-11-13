@@ -98,6 +98,15 @@ class ConversationEngine:
         else:
             tools = tool_schemas()
 
+            # Prefer Responses API if enabled; fallback to Chat on error/unavailability
+            if getattr(settings, 'openai_use_responses', False):
+                try:
+                    content = self.openai.responses_complete_text(messages, tools)
+                    self.sessions.append(user_id, "assistant", content)
+                    return split_for_whatsapp(content)
+                except Exception as e:
+                    log.warning("Responses API failed or unavailable, falling back to Chat: %s", e)
+
             max_tool_iters = 4
             tool_messages: List[Dict[str, Any]] = []
             for _ in range(max_tool_iters):
