@@ -82,6 +82,13 @@
               <input type="text" id="OPENAI_ASSISTANT_ID" name="OPENAI_ASSISTANT_ID" value="{{ OPENAI_ASSISTANT_ID }}" />
             </div>
             <div class="row">
+              <label for="ASSISTANT_INSTRUCTIONS">Assistant Instructions</label>
+              <div>
+                <textarea id="ASSISTANT_INSTRUCTIONS" name="ASSISTANT_INSTRUCTIONS" rows="4">{{ ASSISTANT_INSTRUCTIONS }}</textarea>
+                <div class="hint">Controls the system behavior and tone. Used in both Assistants runs and chat system prompt.</div>
+              </div>
+            </div>
+            <div class="row">
               <label for="TWILIO_ACCOUNT_SID">Twilio Account SID</label>
               <input type="password" id="TWILIO_ACCOUNT_SID" name="TWILIO_ACCOUNT_SID" value="{{ TWILIO_ACCOUNT_SID }}" />
             </div>
@@ -138,10 +145,14 @@
           <div class="desc">Control which tools are exposed to the model, and see their JSON schemas and usage tips. Click Sync to push the current schema to OpenAI.</div>
           <div class="actions" style="margin-bottom:8px;">
             <button class="btn" onclick="loadTools()">Refresh Tools</button>
+            <label class="switch"><input type="checkbox" id="enable-all" onchange="toggleEnableAll()"/> Enable all tools</label>
             <button class="btn" onclick="applyToolSelection()">Apply Tool Selection</button>
             <button class="btn" onclick="syncAssistant()">Sync with OpenAI</button>
           </div>
-          <div id="tools" class="code">Loading tools...</div>
+          <div id="tools-list" class="code">Loading tools...</div>
+          <div style="height:8px"></div>
+          <div class="desc">Effective schema preview (what the model will see):</div>
+          <div id="tools-schema" class="code"></div>
           <div style="height:8px"></div>
           <div id="assistant-info" class="code">Loading assistant info...</div>
           <div class="hint">Usage tips:
@@ -241,29 +252,68 @@
         const data = await res.json();
         document.getElementById('msg').textContent = data.ok ? 'Example MCP server added to config.' : ('Error: '+(data.error||'unknown'));
       }
+      let TOOLS_ALL = [];
+      let TOOLS_ENABLED = [];
+      function renderToolCheckboxes() {
+        const box = document.getElementById('tools-list');
+        if (!TOOLS_ALL.length) { box.textContent = 'No tools available'; return; }
+        const enabledSet = new Set(TOOLS_ENABLED.map(n => n.toLowerCase()));
+        let html = [];
+        for (const t of TOOLS_ALL) {
+          const name = t.name;
+          const checked = (TOOLS_ENABLED[0] === '*' || enabledSet.has(name.toLowerCase()));
+          html.push(`[ ] ${name}: ${t.description}`); // textual fallback for non-JS environments
+        }
+        // Replace with interactive checkboxes
+        let container = document.createElement('div');
+        for (const t of TOOLS_ALL) {
+          const row = document.createElement('div');
+          const id = 'tool-'+t.name;
+          row.innerHTML = `<label><input type="checkbox" id="${id}"> ${t.name}</label> <span class="hint">${t.description||''}</span>`;
+          container.appendChild(row);
+          setTimeout(()=>{ const cb = document.getElementById(id); if (cb) cb.checked = (TOOLS_ENABLED[0]==='*' || TOOLS_ENABLED.map(n=>n.toLowerCase()).includes(t.name.toLowerCase())); },0);
+        }
+        box.innerHTML = '';
+        box.appendChild(container);
+      }
+      function renderEffectiveSchema(effective) {
+        document.getElementById('tools-schema').textContent = JSON.stringify(effective, null, 2);
+      }
       async function loadTools() {
         const res = await fetch('./api/tools');
         const data = await res.json();
-        if (!data.ok) { document.getElementById('tools').textContent = 'Failed to load tools'; return; }
-        const tools = data.tools;
-        let html = [];
-        html.push('Enabled tools:');
-        html.push('');
-        for (const t of tools) {
-          html.push('- ['+ (true ? 'x' : ' ') +'] '+t.name+': '+t.description);
-          if (t.parameters) html.push('  schema: '+JSON.stringify(t.parameters));
+        if (!data.ok) { document.getElementById('tools-list').textContent = 'Failed to load tools'; return; }
+        TOOLS_ALL = data.all || [];
+        TOOLS_ENABLED = data.enabled_names || ['*'];
+        document.getElementById('enable-all').checked = (TOOLS_ENABLED.length===1 && TOOLS_ENABLED[0]==='*');
+        renderToolCheckboxes();
+        renderEffectiveSchema(data.effective||[]);
+      }
+      function toggleEnableAll(){
+        const all = document.getElementById('enable-all').checked;
+        if (all) {
+          TOOLS_ENABLED = ['*'];
+        } else {
+          TOOLS_ENABLED = TOOLS_ALL.map(t=>t.name); // default select all; user can uncheck
         }
-        document.getElementById('tools').textContent = html.join('\n');
+        renderToolCheckboxes();
       }
       async function applyToolSelection() {
-        // Minimal: enable all currently listed tools; advanced UI can be added later with real checkboxes
-        const res = await fetch('./api/tools');
-        const data = await res.json();
-        if (!data.ok) { document.getElementById('msg').textContent = 'Failed to read tools'; return; }
-        const names = data.tools.map(t => t.name);
-        const r2 = await fetch('./api/tools/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(names)});
+        const all = document.getElementById('enable-all').checked;
+        let payload;
+        if (all) {
+          payload = {all:true};
+        } else {
+          const names = [];
+          for (const t of TOOLS_ALL) {
+            const cb = document.getElementById('tool-'+t.name);
+            if (cb && cb.checked) names.push(t.name);
+          }
+          payload = names;
+        }
+        const r2 = await fetch('./api/tools/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
         const d2 = await r2.json();
-        document.getElementById('msg').textContent = d2.ok ? ('Enabled tools: '+(d2.enabled||[]).join(', ')) : ('Error: '+(d2.error||'unknown'));
+        document.getElementById('msg').textContent = d2.ok ? ('Enabled tools updated') : ('Error: '+(d2.error||'unknown'));
         await loadTools();
       }
       async function exportConfig() {

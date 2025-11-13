@@ -10,7 +10,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..config import settings, apply_overrides, save_overrides
 from ..tools import system_tools
 from ..tools import mcp_client
-from ..tools.schemas import tool_schemas
+from ..tools.schemas import tool_schemas, all_tool_schemas
 from openai import OpenAI
 
 log = logging.getLogger(__name__)
@@ -70,6 +70,7 @@ def admin_update(
     OPENAI_MODEL: str = Form(default=""),
     OPENAI_USE_ASSISTANTS: str = Form(default="off"),
     OPENAI_ASSISTANT_ID: str = Form(default=""),
+    ASSISTANT_INSTRUCTIONS: str = Form(default=""),
     TWILIO_ACCOUNT_SID: str = Form(default=""),
     TWILIO_AUTH_TOKEN: str = Form(default=""),
     TWILIO_WHATSAPP_FROM: str = Form(default=""),
@@ -88,6 +89,8 @@ def admin_update(
         overrides["OPENAI_MODEL"] = OPENAI_MODEL.strip()
     overrides["OPENAI_USE_ASSISTANTS"] = "true" if OPENAI_USE_ASSISTANTS == "on" else "false"
     overrides["OPENAI_ASSISTANT_ID"] = OPENAI_ASSISTANT_ID.strip()
+    if ASSISTANT_INSTRUCTIONS:
+        overrides["ASSISTANT_INSTRUCTIONS"] = ASSISTANT_INSTRUCTIONS
 
     if TWILIO_ACCOUNT_SID and not TWILIO_ACCOUNT_SID.startswith("••••"):
         overrides["TWILIO_ACCOUNT_SID"] = TWILIO_ACCOUNT_SID.strip()
@@ -266,16 +269,24 @@ def api_examples_add_local_mcp(_: bool = Depends(require_auth)):
 
 @router.get("/api/tools")
 def api_tools(_: bool = Depends(require_auth)):
-    # Return current tools (after enablement filtering)
-    from ..tools.schemas import tool_schemas
-    return {"ok": True, "tools": [t["function"] for t in tool_schemas()]}
+    # Return both all tools and currently effective tools, plus enabled names
+    all_defs = [t["function"] for t in all_tool_schemas()]
+    eff_defs = [t["function"] for t in tool_schemas()]
+    enabled = list(settings.enabled_tools) if settings.enabled_tools else []
+    return {"ok": True, "all": all_defs, "effective": eff_defs, "enabled_names": enabled or ["*"]}
 
 
 @router.post("/api/tools/enable")
-def api_tools_enable(_: bool = Depends(require_auth), names: list[str] = Body(...)):
-    if not isinstance(names, list):
-        return JSONResponse({"ok": False, "error": "names must be list"}, status_code=400)
-    overrides = {"ENABLED_TOOLS": ",".join(names) if names else ""}
+def api_tools_enable(_: bool = Depends(require_auth), payload: dict | list = Body(...)):
+    # Accept either {"all": true} or a list of names
+    if isinstance(payload, dict) and payload.get("all") is True:
+        overrides = {"ENABLED_TOOLS": "*"}
+        names = [t["function"]["name"] for t in all_tool_schemas()]
+    else:
+        names = payload if isinstance(payload, list) else []
+        if not isinstance(names, list):
+            return JSONResponse({"ok": False, "error": "names must be list or {all:true}"}, status_code=400)
+        overrides = {"ENABLED_TOOLS": ",".join(names) if names else ""}
     apply_overrides(overrides)
     save_overrides(overrides)
     return {"ok": True, "enabled": names}
