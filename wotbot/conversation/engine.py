@@ -1,5 +1,6 @@
+import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Iterable
 
 from ..config import settings
 from ..utils.text_splitter import split_for_whatsapp
@@ -100,41 +101,88 @@ class ConversationEngine:
 
             max_tool_iters = 4
             tool_messages: List[Dict[str, Any]] = []
-            for _ in range(max_tool_iters):
-                resp = self.openai.chat_with_tools(messages + tool_messages, tools)
-                choice = resp.choices[0].message
 
-                if getattr(choice, "tool_calls", None):
-                    # Include the assistant message with tool calls
-                    tool_messages.append({
-                        "role": "assistant",
-                        "content": choice.content or "",
-                        "tool_calls": [
-                            {
-                                "id": call.id,
-                                "type": "function",
-                                "function": {"name": call.function.name, "arguments": call.function.arguments},
-                            }
-                            for call in choice.tool_calls
-                        ],
-                    })
-                    for call in choice.tool_calls:
-                        name = call.function.name
-                        args = call.function.arguments
-                        log.info("Model requested tool: %s", name)
-                        result = self.tools.call(name, args)
-                        # Append tool result message
-                        tool_messages.append({
-                            "role": "tool",
-                            "tool_call_id": call.id,
-                            "content": json_dumps_safe(result)[:4000],
-                        })
-                    # continue loop with appended tool_messages
-                    continue
-                else:
-                    content = choice.content or "(no content)"
+            if settings.openai_use_responses:
+                for _ in range(max_tool_iters):
+                    resp = self.openai.responses_with_tools(messages + tool_messages, tools)
+                    assistant = _last_assistant_output(resp)
+                    if not assistant:
+                        break
+
+                    tool_calls = _normalize_tool_calls(assistant.get("tool_calls"))
+                    if tool_calls:
+                        assistant_message: Dict[str, Any] = {
+                            "role": "assistant",
+                            "content": _content_to_text(assistant.get("content")),
+                        }
+                        if tool_calls:
+                            assistant_message["tool_calls"] = tool_calls
+                        tool_messages.append(assistant_message)
+                        for call in tool_calls:
+                            name = call.get("function", {}).get("name", "")
+                            args = call.get("function", {}).get("arguments", "{}")
+                            if not isinstance(args, str):
+                                try:
+                                    args = json.dumps(args)
+                                except Exception:
+                                    args = str(args)
+                            log.info("Model requested tool: %s", name)
+                            result = self.tools.call(name, args)
+                            tool_messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": call.get("id"),
+                                    "content": json_dumps_safe(result)[:4000],
+                                }
+                            )
+                        continue
+
+                    content = _content_to_text(assistant.get("content")) or _output_text(resp) or "(no content)"
                     self.sessions.append(user_id, "assistant", content)
                     return split_for_whatsapp(content)
+            else:
+                for _ in range(max_tool_iters):
+                    resp = self.openai.chat_with_tools(messages + tool_messages, tools)
+                    choice = resp.choices[0].message
+
+                    if getattr(choice, "tool_calls", None):
+                        # Include the assistant message with tool calls
+                        tool_messages.append(
+                            {
+                                "role": "assistant",
+                                "content": choice.content or "",
+                                "tool_calls": [
+                                    {
+                                        "id": call.id,
+                                        "type": "function",
+                                        "function": {
+                                            "name": call.function.name,
+                                            "arguments": call.function.arguments,
+                                        },
+                                    }
+                                    for call in choice.tool_calls
+                                ],
+                            }
+                        )
+                        for call in choice.tool_calls:
+                            name = call.function.name
+                            args = call.function.arguments
+                            log.info("Model requested tool: %s", name)
+                            result = self.tools.call(name, args)
+                            # Append tool result message
+                            tool_messages.append(
+                                {
+                                    "role": "tool",
+                                    "tool_call_id": call.id,
+                                    "content": json_dumps_safe(result)[:4000],
+                                }
+                            )
+                        # continue loop with appended tool_messages
+                        continue
+                    else:
+                        content = choice.content or "(no content)"
+                        self.sessions.append(user_id, "assistant", content)
+                        return split_for_whatsapp(content)
 
             # If loop ends without content
             fallback = "I executed tools but didn't get a final message. Please try again."
@@ -149,3 +197,76 @@ def json_dumps_safe(obj: Any) -> str:
         return json.dumps(obj, ensure_ascii=False)
     except Exception:
         return str(obj)
+
+
+def _last_assistant_output(response: Any) -> Dict[str, Any]:
+    output = getattr(response, "output", None)
+    if not output:
+        return {}
+    for item in reversed(list(_ensure_iterable(output))):
+        data = _to_plain_dict(item)
+        if data.get("role") == "assistant":
+            return data
+    return {}
+
+
+def _output_text(response: Any) -> str:
+    if hasattr(response, "output_text") and getattr(response, "output_text"):
+        return getattr(response, "output_text")
+    data = _to_plain_dict(response)
+    return data.get("output_text", "")
+
+
+def _content_to_text(content: Any) -> str:
+    if not content:
+        return ""
+    if isinstance(content, str):
+        return content
+    parts = []
+    for part in _ensure_iterable(content):
+        if isinstance(part, str):
+            if part:
+                parts.append(part)
+            continue
+        data = _to_plain_dict(part)
+        text = data.get("text")
+        if not text and data.get("type") in {"output_text", "text"}:
+            text = data.get("text")
+        if not text and data.get("type") == "tool_call":
+            continue
+        if text:
+            parts.append(text)
+    return "\n".join(p for p in parts if p)
+
+
+def _normalize_tool_calls(tool_calls: Any) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    if not tool_calls:
+        return result
+    for call in _ensure_iterable(tool_calls):
+        data = _to_plain_dict(call)
+        if data:
+            if "function" in data and not isinstance(data["function"], dict):
+                data["function"] = _to_plain_dict(data["function"])
+            result.append(data)
+    return result
+
+
+def _ensure_iterable(value: Any) -> Iterable:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        return value
+    return [value]
+
+
+def _to_plain_dict(value: Any) -> Dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "to_dict"):
+        return value.to_dict()
+    if hasattr(value, "__dict__"):
+        return {k: getattr(value, k) for k in vars(value) if not k.startswith("_")}
+    return {}
