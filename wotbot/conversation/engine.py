@@ -72,7 +72,7 @@ class ConversationEngine:
             return self.handle_command(user_id, text)
 
         # Build system prompt
-        system_prompt = (
+        system_prompt = settings.assistant_instructions or (
             "You are WotBot, a WhatsApp assistant. Keep replies concise, mobile-friendly. "
             "Use tools when helpful. Prefer bullets and short paragraphs. If output is long, suggest summarizing."
         )

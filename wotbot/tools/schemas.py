@@ -1,8 +1,9 @@
 from typing import List, Dict, Any
+from ..config import settings
 
 
 def tool_schemas() -> List[Dict[str, Any]]:
-    return [
+    all_tools = [
         {
             "type": "function",
             "function": {
@@ -101,4 +102,8 @@ def tool_schemas() -> List[Dict[str, Any]]:
             },
         },
     ]
-
+    enabled = settings.enabled_tools
+    if enabled and enabled != ("*",):
+        allow = set(t.lower() for t in enabled)
+        all_tools = [t for t in all_tools if t.get("function", {}).get("name", "").lower() in allow]
+    return all_tools

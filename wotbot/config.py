@@ -22,6 +22,10 @@ class Settings:
     openai_use_responses: bool = _get_bool("OPENAI_USE_RESPONSES", "false")
     openai_use_assistants: bool = _get_bool("OPENAI_USE_ASSISTANTS", "false")
     openai_assistant_id: Optional[str] = os.getenv("OPENAI_ASSISTANT_ID")
+    assistant_instructions: str = os.getenv(
+        "ASSISTANT_INSTRUCTIONS",
+        "You are WotBot, a WhatsApp assistant. Keep replies concise and mobile-friendly. Use tools when helpful. Prefer bullets and short paragraphs. If output is long, suggest summarizing.",
+    )
 
     # Admin & Modes
     admin_phone_numbers: List[str] = tuple(
@@ -56,6 +60,11 @@ class Settings:
     logs_dir: str = os.getenv("LOGS_DIR", "logs")
     config_dir: str = os.getenv("CONFIG_DIR", "data/config")
 
+    # Tools enablement
+    enabled_tools: List[str] = tuple(
+        t.strip() for t in os.getenv("ENABLED_TOOLS", "*").split(",") if t.strip()
+    )
+
 
 settings = Settings()
 
@@ -77,6 +86,13 @@ EDITABLE_FIELDS = {
     # Tooling / Admin
     "ALLOW_HTTP_DOMAINS": ("allow_http_domains", list),
     "ADMIN_PHONE_NUMBERS": ("admin_phone_numbers", list),
+    # MCP
+    "MCP_SERVERS": ("mcp_servers", list),
+    "MCP_TOKEN": ("mcp_token", str),
+    # Assistant
+    "ASSISTANT_INSTRUCTIONS": ("assistant_instructions", str),
+    # Tools
+    "ENABLED_TOOLS": ("enabled_tools", list),
 }
 
 

@@ -5,79 +5,293 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>WotBot Admin</title>
     <style>
-      body { font-family: system-ui, sans-serif; margin: 2rem; }
-      .container { max-width: 900px; margin: 0 auto; }
-      h1 { margin-bottom: 0.5rem; }
-      form { display: grid; grid-template-columns: 1fr 2fr; gap: 0.6rem 1rem; }
-      label { font-weight: 600; }
-      input[type=text], input[type=password], textarea { width: 100%; padding: 0.5rem; }
-      .row { grid-column: 1 / -1; margin-top: 1rem; }
-      .actions { display: flex; gap: 1rem; }
-      .divider { grid-column: 1 / -1; height: 1px; background: #ddd; margin: 0.8rem 0; }
-      .hint { color: #666; font-size: 0.9rem; }
-      .switch { display: flex; align-items: center; gap: 0.5rem; }
-      button { padding: 0.6rem 1rem; }
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --accent: #22c55e;
+        --danger: #ef4444;
+        --border: #1f2937;
+      }
+      * { box-sizing: border-box; }
+      body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji"; background: var(--bg); color: var(--text); margin: 0; }
+      .nav { background: #0b1220; border-bottom: 1px solid var(--border); padding: 14px 22px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; }
+      .nav h1 { margin: 0; font-size: 18px; letter-spacing: 0.3px; }
+      .container { max-width: 1080px; margin: 24px auto; padding: 0 16px; }
+      .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 16px; }
+      .card { grid-column: span 12; background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+      @media (min-width: 900px) {
+        .span-6 { grid-column: span 6; }
+        .span-4 { grid-column: span 4; }
+        .span-8 { grid-column: span 8; }
+      }
+      .card h2 { margin: 0 0 8px 0; font-size: 16px; }
+      .desc { color: var(--muted); font-size: 13px; margin-bottom: 12px; }
+      .row { display: grid; grid-template-columns: 180px 1fr; align-items: center; gap: 10px; margin: 8px 0; }
+      label { color: var(--muted); font-size: 13px; }
+      input[type=text], input[type=password], textarea { width: 100%; padding: 10px 12px; background: #0b1220; color: var(--text); border: 1px solid var(--border); border-radius: 8px; }
+      textarea { resize: vertical; min-height: 60px; }
+      .switch { display: inline-flex; align-items: center; gap: 10px; }
+      .btn { appearance: none; border: 1px solid var(--border); background: #0b1220; color: var(--text); padding: 8px 12px; border-radius: 8px; cursor: pointer; }
+      .btn:hover { border-color: #334155; }
+      .btn.accent { background: var(--accent); color: #0b1220; border: none; }
+      .btn.danger { background: transparent; border-color: var(--danger); color: var(--danger); }
+      .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+      .code { background: #0b1220; border: 1px dashed var(--border); color: #d1d5db; padding: 10px; border-radius: 8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 12px; overflow: auto; max-height: 260px; }
+      .hint { color: var(--muted); font-size: 12px; }
+      .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+      .badge { border: 1px solid var(--border); background: #0b1220; color: var(--muted); border-radius: 999px; padding: 4px 8px; font-size: 12px; }
+      .success { color: var(--accent); }
     </style>
   </head>
   <body>
-    <div class="container">
+    <div class="nav">
       <h1>WotBot Admin</h1>
-      <p class="hint">Update runtime configuration. Secrets are masked; leave them blank to keep existing values.</p>
-      <form method="post">
-        <div class="divider"></div>
-        <label for="OPENAI_API_KEY">OpenAI API Key</label>
-        <input type="password" id="OPENAI_API_KEY" name="OPENAI_API_KEY" value="{{ OPENAI_API_KEY }}" />
-
-        <label for="OPENAI_MODEL">OpenAI Model</label>
-        <input type="text" id="OPENAI_MODEL" name="OPENAI_MODEL" value="{{ OPENAI_MODEL }}" />
-
-        <label for="OPENAI_USE_ASSISTANTS">Use Assistants</label>
-        <div class="switch">
-          <input type="checkbox" id="OPENAI_USE_ASSISTANTS" name="OPENAI_USE_ASSISTANTS" {% if OPENAI_USE_ASSISTANTS %}checked{% endif %} />
-          <span class="hint">If on, uses Assistants API with tool calling.</span>
+      <div class="badges">
+        <span class="badge" id="assistant-badge">Assistant: -</span>
+        <span class="badge" id="model-badge">Model: {{ OPENAI_MODEL }}</span>
+      </div>
+    </div>
+    <div class="container">
+      <div class="grid">
+        <div class="card span-8">
+          <h2>Configuration</h2>
+          <div class="desc">Update runtime settings. Secrets are masked; leave blank to keep current. Save will apply immediately.</div>
+          <form method="post" id="cfg-form">
+            <div class="row">
+              <label for="OPENAI_API_KEY">OpenAI API Key</label>
+              <div>
+                <input type="password" id="OPENAI_API_KEY" name="OPENAI_API_KEY" value="{{ OPENAI_API_KEY }}" />
+                <div class="hint">Your OpenAI key. Click Save to apply.</div>
+              </div>
+            </div>
+            <div class="row">
+              <label for="OPENAI_MODEL">OpenAI Model</label>
+              <input type="text" id="OPENAI_MODEL" name="OPENAI_MODEL" value="{{ OPENAI_MODEL }}" />
+            </div>
+            <div class="row">
+              <label>Use Assistants</label>
+              <div class="switch">
+                <input type="checkbox" id="OPENAI_USE_ASSISTANTS" name="OPENAI_USE_ASSISTANTS" {% if OPENAI_USE_ASSISTANTS %}checked{% endif %} />
+                <span class="hint">Enable to use the Assistants API (+ function tools).</span>
+              </div>
+            </div>
+            <div class="row">
+              <label for="OPENAI_ASSISTANT_ID">Assistant ID</label>
+              <input type="text" id="OPENAI_ASSISTANT_ID" name="OPENAI_ASSISTANT_ID" value="{{ OPENAI_ASSISTANT_ID }}" />
+            </div>
+            <div class="row">
+              <label for="TWILIO_ACCOUNT_SID">Twilio Account SID</label>
+              <input type="password" id="TWILIO_ACCOUNT_SID" name="TWILIO_ACCOUNT_SID" value="{{ TWILIO_ACCOUNT_SID }}" />
+            </div>
+            <div class="row">
+              <label for="TWILIO_AUTH_TOKEN">Twilio Auth Token</label>
+              <input type="password" id="TWILIO_AUTH_TOKEN" name="TWILIO_AUTH_TOKEN" value="{{ TWILIO_AUTH_TOKEN }}" />
+            </div>
+            <div class="row">
+              <label for="TWILIO_WHATSAPP_FROM">WhatsApp From</label>
+              <div>
+                <input type="text" id="TWILIO_WHATSAPP_FROM" name="TWILIO_WHATSAPP_FROM" value="{{ TWILIO_WHATSAPP_FROM }}" />
+                <div class="hint">Sandbox: whatsapp:+14155238886. Real number uses your WhatsApp-enabled Twilio phone.</div>
+              </div>
+            </div>
+            <div class="row">
+              <label>Validate Signature</label>
+              <div class="switch">
+                <input type="checkbox" id="TWILIO_VALIDATE_SIGNATURE" name="TWILIO_VALIDATE_SIGNATURE" {% if TWILIO_VALIDATE_SIGNATURE %}checked{% endif %} />
+                <span class="hint">Enable after PUBLIC_BASE_URL is set correctly.</span>
+              </div>
+            </div>
+            <div class="row">
+              <label for="PUBLIC_BASE_URL">Public Base URL</label>
+              <input type="text" id="PUBLIC_BASE_URL" name="PUBLIC_BASE_URL" value="{{ PUBLIC_BASE_URL }}" />
+            </div>
+            <div class="row"><label></label>
+              <div class="actions">
+                <button class="btn accent" type="submit">Save Changes</button>
+                <button class="btn" type="button" onclick="syncAssistant()">Sync Assistant Tools</button>
+                <button class="btn danger" type="button" onclick="restart()">Restart</button>
+              </div>
+            </div>
+            <div class="row"><label></label><div id="msg" class="hint"></div></div>
+            <div class="row"><label>Admin Numbers</label><textarea id="ADMIN_PHONE_NUMBERS" name="ADMIN_PHONE_NUMBERS" rows="3">{{ ADMIN_PHONE_NUMBERS }}</textarea></div>
+            <div class="row"><label>HTTP Allowlist</label><input type="text" id="ALLOW_HTTP_DOMAINS" name="ALLOW_HTTP_DOMAINS" value="{{ ALLOW_HTTP_DOMAINS }}" /></div>
+            <div class="row"><label>MCP Servers</label><input type="text" id="MCP_SERVERS" name="MCP_SERVERS" value="{{ MCP_SERVERS }}" /></div>
+            <div class="row"><label>MCP Token</label><input type="password" id="MCP_TOKEN" name="MCP_TOKEN" value="{{ MCP_TOKEN }}" /></div>
+          </form>
         </div>
-
-        <label for="OPENAI_ASSISTANT_ID">Assistant ID</label>
-        <input type="text" id="OPENAI_ASSISTANT_ID" name="OPENAI_ASSISTANT_ID" value="{{ OPENAI_ASSISTANT_ID }}" />
-
-        <div class="divider"></div>
-        <label for="TWILIO_ACCOUNT_SID">Twilio Account SID</label>
-        <input type="password" id="TWILIO_ACCOUNT_SID" name="TWILIO_ACCOUNT_SID" value="{{ TWILIO_ACCOUNT_SID }}" />
-
-        <label for="TWILIO_AUTH_TOKEN">Twilio Auth Token</label>
-        <input type="password" id="TWILIO_AUTH_TOKEN" name="TWILIO_AUTH_TOKEN" value="{{ TWILIO_AUTH_TOKEN }}" />
-
-        <label for="TWILIO_WHATSAPP_FROM">WhatsApp From</label>
-        <input type="text" id="TWILIO_WHATSAPP_FROM" name="TWILIO_WHATSAPP_FROM" value="{{ TWILIO_WHATSAPP_FROM }}" />
-
-        <label for="TWILIO_VALIDATE_SIGNATURE">Validate Signature</label>
-        <div class="switch">
-          <input type="checkbox" id="TWILIO_VALIDATE_SIGNATURE" name="TWILIO_VALIDATE_SIGNATURE" {% if TWILIO_VALIDATE_SIGNATURE %}checked{% endif %} />
-          <span class="hint">Requires PUBLIC_BASE_URL to match your webhook URL.</span>
+        <div class="card span-4">
+          <h2>System</h2>
+          <div class="desc">Quick status and logs. Use for troubleshooting.</div>
+          <div class="actions" style="margin-bottom:8px;">
+            <button class="btn" onclick="loadHealth()">Refresh Health</button>
+            <button class="btn" onclick="loadLogs()">View Logs</button>
+            <button class="btn" onclick="testMCP()">Test MCP</button>
+          </div>
+          <div id="health" class="code">Loading...</div>
+          <div style="height:8px"></div>
+          <div id="logs" class="code"></div>
         </div>
-
-        <label for="PUBLIC_BASE_URL">Public Base URL</label>
-        <input type="text" id="PUBLIC_BASE_URL" name="PUBLIC_BASE_URL" value="{{ PUBLIC_BASE_URL }}" />
-
-        <div class="divider"></div>
-        <label for="ALLOW_HTTP_DOMAINS">Allowlist Domains</label>
-        <input type="text" id="ALLOW_HTTP_DOMAINS" name="ALLOW_HTTP_DOMAINS" value="{{ ALLOW_HTTP_DOMAINS }}" />
-
-        <label for="ADMIN_PHONE_NUMBERS">Admin Phone Numbers</label>
-        <textarea id="ADMIN_PHONE_NUMBERS" name="ADMIN_PHONE_NUMBERS" rows="3">{{ ADMIN_PHONE_NUMBERS }}</textarea>
-
-        <div class="row actions">
-          <button type="submit">Save Changes</button>
-          <button type="button" onclick="restart()">Restart Service</button>
+        <div class="card span-12">
+          <h2>Assistant Tools</h2>
+          <div class="desc">Control which tools are exposed to the model, and see their JSON schemas and usage tips. Click Sync to push the current schema to OpenAI.</div>
+          <div class="actions" style="margin-bottom:8px;">
+            <button class="btn" onclick="loadTools()">Refresh Tools</button>
+            <button class="btn" onclick="applyToolSelection()">Apply Tool Selection</button>
+            <button class="btn" onclick="syncAssistant()">Sync with OpenAI</button>
+          </div>
+          <div id="tools" class="code">Loading tools...</div>
+          <div style="height:8px"></div>
+          <div id="assistant-info" class="code">Loading assistant info...</div>
+          <div class="hint">Usage tips:
+            <ul>
+              <li><b>run_code</b>: Small calculations or snippets. Avoid long-running jobs.</li>
+              <li><b>http_request</b>: Fetch JSON or text. Domain must be allowlisted.</li>
+              <li><b>mcp_call</b>: Call tools exposed by your MCP servers (see MCP section).</li>
+              <li><b>get_system_status</b>, <b>read_log</b>, <b>read_config</b>, <b>restart_self</b>: Bot maintenance only.</li>
+            </ul>
+          </div>
         </div>
-      </form>
+        <div class="card span-12">
+          <h2>Examples & Import/Export</h2>
+          <div class="desc">Quick-start an example MCP server and manage configuration snapshots.</div>
+          <div class="grid">
+            <div class="span-8">
+              <div class="code" style="margin-bottom:8px;">
+                Example MCP server (echo/add):
+                
+                python examples/mcp_echo_server.py --host 127.0.0.1 --port 9010
+                
+                Then click “Add Local Example MCP” below.
+              </div>
+              <div class="actions">
+                <button class="btn" onclick="addLocalMCP()">Add Local Example MCP</button>
+                <button class="btn" onclick="testMCP()">Test MCP</button>
+              </div>
+            </div>
+            <div class="span-4">
+              <div class="actions" style="margin-bottom:8px;">
+                <button class="btn" onclick="exportConfig()">Export Config</button>
+                <label class="btn" for="import-file">Import Config</label>
+                <input id="import-file" type="file" accept="application/json" style="display:none"/>
+              </div>
+              <div id="import-result" class="hint"></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
     <script>
       async function restart() {
         const res = await fetch('./restart', {method: 'POST'});
         if (res.ok) alert('Restart scheduled.'); else alert('Restart failed.');
       }
+      async function syncAssistant() {
+        const res = await fetch('./api/assistant/sync', {method:'POST'});
+        const data = await res.json();
+        document.getElementById('msg').textContent = (data.ok !== false) ? (data.message||'Synced') : ('Error: '+data.error);
+        await loadAssistantInfo();
+      }
+      async function loadAssistantInfo() {
+        try {
+          const res = await fetch('./api/assistant/info');
+          const data = await res.json();
+          document.getElementById('assistant-info').textContent = JSON.stringify(data, null, 2);
+          document.getElementById('assistant-badge').textContent = 'Assistant: ' + (data.assistant_id || '-');
+          document.getElementById('model-badge').textContent = 'Model: ' + (data.model || '-');
+        } catch (e) {
+          document.getElementById('assistant-info').textContent = 'Failed to load assistant info';
+        }
+      }
+      async function loadHealth() {
+        try {
+          const res = await fetch('/health');
+          const data = await res.json();
+          document.getElementById('health').textContent = JSON.stringify(data, null, 2);
+        } catch (e) {
+          document.getElementById('health').textContent = 'Failed to load health';
+        }
+      }
+      async function loadLogs() {
+        try {
+          const res = await fetch('./api/logs?path=app.log&lines=200');
+          const data = await res.json();
+          if (data.ok) {
+            document.getElementById('logs').textContent = data.lines.join('\n');
+          } else {
+            document.getElementById('logs').textContent = 'Error: ' + (data.error||'unknown');
+          }
+        } catch (e) {
+          document.getElementById('logs').textContent = 'Failed to load logs';
+        }
+      }
+      async function testMCP() {
+        try {
+          const res = await fetch('./api/mcp/list-tools', {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({})});
+          const data = await res.json();
+          const el = document.getElementById('logs');
+          el.textContent = JSON.stringify(data, null, 2);
+        } catch (e) {
+          document.getElementById('logs').textContent = 'Failed to test MCP';
+        }
+      }
+      async function addLocalMCP() {
+        const res = await fetch('./api/examples/add-local-mcp', {method:'POST'});
+        const data = await res.json();
+        document.getElementById('msg').textContent = data.ok ? 'Example MCP server added to config.' : ('Error: '+(data.error||'unknown'));
+      }
+      async function loadTools() {
+        const res = await fetch('./api/tools');
+        const data = await res.json();
+        if (!data.ok) { document.getElementById('tools').textContent = 'Failed to load tools'; return; }
+        const tools = data.tools;
+        let html = [];
+        html.push('Enabled tools:');
+        html.push('');
+        for (const t of tools) {
+          html.push('- ['+ (true ? 'x' : ' ') +'] '+t.name+': '+t.description);
+          if (t.parameters) html.push('  schema: '+JSON.stringify(t.parameters));
+        }
+        document.getElementById('tools').textContent = html.join('\n');
+      }
+      async function applyToolSelection() {
+        // Minimal: enable all currently listed tools; advanced UI can be added later with real checkboxes
+        const res = await fetch('./api/tools');
+        const data = await res.json();
+        if (!data.ok) { document.getElementById('msg').textContent = 'Failed to read tools'; return; }
+        const names = data.tools.map(t => t.name);
+        const r2 = await fetch('./api/tools/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(names)});
+        const d2 = await r2.json();
+        document.getElementById('msg').textContent = d2.ok ? ('Enabled tools: '+(d2.enabled||[]).join(', ')) : ('Error: '+(d2.error||'unknown'));
+        await loadTools();
+      }
+      async function exportConfig() {
+        const res = await fetch('./api/config/export');
+        const data = await res.json();
+        const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'wotbot-config.json';
+        a.click();
+      }
+      document.getElementById('import-file').addEventListener('change', async (e)=>{
+        const file = e.target.files[0];
+        if (!file) return;
+        const text = await file.text();
+        try {
+          const payload = JSON.parse(text);
+          const res = await fetch('./api/config/import', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+          const data = await res.json();
+          document.getElementById('import-result').textContent = data.ok ? 'Import successful' : ('Error: '+(data.error||'unknown'));
+        } catch (err) {
+          document.getElementById('import-result').textContent = 'Invalid JSON file';
+        }
+      });
+      // On load
+      loadAssistantInfo();
+      loadHealth();
+      loadTools();
     </script>
   </body>
   </html>
-
