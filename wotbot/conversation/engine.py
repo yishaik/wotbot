@@ -102,7 +102,7 @@ class ConversationEngine:
             max_tool_iters = 4
             tool_messages: List[Dict[str, Any]] = []
 
-            if settings.openai_use_responses:
+            if settings.openai_use_responses and hasattr(self.openai.client, "responses"):
                 for _ in range(max_tool_iters):
                     resp = self.openai.responses_with_tools(messages + tool_messages, tools)
                     assistant = _last_assistant_output(resp)

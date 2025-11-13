@@ -49,8 +49,8 @@ async def whatsapp_webhook(request: Request, background: BackgroundTasks):
     # Process asynchronously, respond immediately to Twilio
     background.add_task(process_and_reply, from_number, text)
 
-    # Twilio expects a valid 200 OK quickly; an empty 200 is fine when replying via REST
-    return PlainTextResponse("OK")
+    # Return 204 No Content to avoid sending a stray message back to WhatsApp
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def process_and_reply(from_number: str, text: str):
