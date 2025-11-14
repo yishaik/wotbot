@@ -103,7 +103,8 @@ class ConversationEngine:
 
         # Choose backend
         if settings.openai_use_assistants:
-            content = self.assistants.complete(user_id, text, system_prompt)
+            # Assistants backend expects plain text; pass the first text part
+            content = self.assistants.complete(user_id, first_text or "", system_prompt)
             content = content or "(no content)"
             self.sessions.append(user_id, "assistant", content)
             return split_for_whatsapp(content)

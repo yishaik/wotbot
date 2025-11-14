@@ -54,8 +54,19 @@
       </div>
     </div>
     <div class="container">
+      <div class="card span-12" style="margin-bottom:12px;">
+        <div class="actions" id="tabs">
+          <button class="btn" data-section="config">Configuration</button>
+          <button class="btn" data-section="openai">OpenAI</button>
+          <button class="btn" data-section="tools">Tools</button>
+          <button class="btn" data-section="twilio">Twilio</button>
+          <button class="btn" data-section="system">System</button>
+          <button class="btn" data-section="configio">Import/Export</button>
+          <button class="btn" data-section="ai">AI Assistant</button>
+        </div>
+      </div>
       <div class="grid">
-        <div class="card span-8">
+        <div class="card span-8" data-section="config">
           <h2>Configuration</h2>
           <div class="desc">Update runtime settings. Secrets are masked; leave blank to keep current. Save will apply immediately.</div>
           <form method="post" id="cfg-form">
@@ -78,6 +89,13 @@
               </div>
             </div>
             <div class="row">
+              <label>Use Responses</label>
+              <div class="switch">
+                <input type="checkbox" id="OPENAI_USE_RESPONSES" name="OPENAI_USE_RESPONSES" {% if OPENAI_USE_RESPONSES %}checked{% endif %} />
+                <span class="hint">Prefer Responses API for tool-calling; falls back to Chat on errors.</span>
+              </div>
+            </div>
+            <div class="row">
               <label for="OPENAI_ASSISTANT_ID">Assistant ID</label>
               <input type="text" id="OPENAI_ASSISTANT_ID" name="OPENAI_ASSISTANT_ID" value="{{ OPENAI_ASSISTANT_ID }}" />
             </div>
@@ -88,6 +106,20 @@
                 <div class="hint">Controls the system behavior and tone. Used in both Assistants runs and chat system prompt.</div>
               </div>
             </div>
+            <div class="row">
+              <label for="OPENAI_TEMPERATURE">Temperature</label>
+              <input type="text" id="OPENAI_TEMPERATURE" name="OPENAI_TEMPERATURE" value="{{ OPENAI_TEMPERATURE }}" />
+            </div>
+            <div class="row">
+              <label for="OPENAI_MAX_TOKENS">Max Tokens</label>
+              <input type="text" id="OPENAI_MAX_TOKENS" name="OPENAI_MAX_TOKENS" value="{{ OPENAI_MAX_TOKENS }}" />
+            </div>
+            <div class="row"><label></label>
+              <div class="actions">
+                <button class="btn" onclick="fetchModels();return false;">Fetch Models</button>
+              </div>
+            </div>
+            <div class="row"><label>Models</label><div id="models" class="code"></div></div>
             <div class="row">
               <label for="TWILIO_ACCOUNT_SID">Twilio Account SID</label>
               <input type="password" id="TWILIO_ACCOUNT_SID" name="TWILIO_ACCOUNT_SID" value="{{ TWILIO_ACCOUNT_SID }}" />
@@ -128,19 +160,22 @@
             <div class="row"><label>MCP Token</label><input type="password" id="MCP_TOKEN" name="MCP_TOKEN" value="{{ MCP_TOKEN }}" /></div>
           </form>
         </div>
-        <div class="card span-4">
+        <div class="card span-4" data-section="system">
           <h2>System</h2>
           <div class="desc">Quick status and logs. Use for troubleshooting.</div>
           <div class="actions" style="margin-bottom:8px;">
             <button class="btn" onclick="loadHealth()">Refresh Health</button>
             <button class="btn" onclick="loadLogs()">View Logs</button>
             <button class="btn" onclick="testMCP()">Test MCP</button>
+            <button class="btn" onclick="summarizeLogs()">Summarize Logs (AI)</button>
           </div>
           <div id="health" class="code">Loading...</div>
           <div style="height:8px"></div>
           <div id="logs" class="code"></div>
+          <div style="height:8px"></div>
+          <div id="logs-summary" class="code"></div>
         </div>
-        <div class="card span-12">
+        <div class="card span-12" data-section="tools">
           <h2>Assistant Tools</h2>
           <div class="desc">Control which tools are exposed to the model, and see their JSON schemas and usage tips. Click Sync to push the current schema to OpenAI.</div>
           <div class="actions" style="margin-bottom:8px;">
@@ -164,7 +199,16 @@
             </ul>
           </div>
         </div>
-        <div class="card span-12">
+        <div class="card span-12" data-section="twilio" style="display:none;">
+          <h2>Twilio</h2>
+          <div class="desc">Send a test WhatsApp message to verify delivery.</div>
+          <div class="row"><label>From</label><div class="hint">{{ TWILIO_WHATSAPP_FROM }}</div></div>
+          <div class="row"><label for="tw-to">To number</label><input id="tw-to" type="text" placeholder="whatsapp:+1..."/></div>
+          <div class="row"><label for="tw-body">Message</label><textarea id="tw-body" rows="3">Hello from WotBot (test)</textarea></div>
+          <div class="actions"><button class="btn" onclick="twilioTestSend()">Send Test</button></div>
+          <div id="tw-result" class="code"></div>
+        </div>
+        <div class="card span-12" data-section="configio">
           <h2>Examples & Import/Export</h2>
           <div class="desc">Quick-start an example MCP server and manage configuration snapshots.</div>
           <div class="grid">
@@ -191,22 +235,47 @@
             </div>
           </div>
         </div>
+        <div class="card span-12" data-section="ai" style="display:none;">
+          <h2>AI Assistant</h2>
+          <div class="row"><label>Question</label><textarea id="ai-q" rows="3" placeholder="What would you like to know?"></textarea></div>
+          <div class="actions">
+            <label class="switch"><input type="checkbox" id="ai-logs"/> Include logs</label>
+            <label class="switch"><input type="checkbox" id="ai-health"/> Include health</label>
+            <label class="switch"><input type="checkbox" id="ai-tools"/> Include tools</label>
+            <button class="btn" onclick="askAI()">Ask AI</button>
+          </div>
+          <div id="ai-answer" class="code"></div>
+        </div>
       </div>
     </div>
     <script>
+      // Tabs
+      (function(){
+        const buttons = document.querySelectorAll('#tabs [data-section]');
+        const sections = document.querySelectorAll('.grid [data-section]');
+        function select(name){
+          sections.forEach(s=>{
+            const show = s.getAttribute('data-section')===name;
+            s.style.display = show ? 'block' : 'none';
+          });
+          localStorage.setItem('admin.tab', name);
+        }
+        buttons.forEach(b=>b.addEventListener('click', ()=>select(b.getAttribute('data-section'))));
+        select(localStorage.getItem('admin.tab')||'config');
+      })();
       async function restart() {
-        const res = await fetch('./restart', {method: 'POST'});
+        const res = await fetch('/admin/restart', {method: 'POST'});
         if (res.ok) alert('Restart scheduled.'); else alert('Restart failed.');
       }
       async function syncAssistant() {
-        const res = await fetch('./api/assistant/sync', {method:'POST'});
+        const res = await fetch('/admin/api/assistant/sync', {method:'POST'});
         const data = await res.json();
         document.getElementById('msg').textContent = (data.ok !== false) ? (data.message||'Synced') : ('Error: '+data.error);
         await loadAssistantInfo();
       }
       async function loadAssistantInfo() {
         try {
-          const res = await fetch('./api/assistant/info');
+          const res = await fetch('/admin/api/assistant/info');
           const data = await res.json();
           document.getElementById('assistant-info').textContent = JSON.stringify(data, null, 2);
           document.getElementById('assistant-badge').textContent = 'Assistant: ' + (data.assistant_id || '-');
@@ -226,7 +295,7 @@
       }
       async function loadLogs() {
         try {
-          const res = await fetch('./api/logs?path=app.log&lines=200');
+          const res = await fetch('/admin/api/logs?path=app.log&lines=200');
           const data = await res.json();
           if (data.ok) {
             document.getElementById('logs').textContent = data.lines.join('\n');
@@ -239,7 +308,7 @@
       }
       async function testMCP() {
         try {
-          const res = await fetch('./api/mcp/list-tools', {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({})});
+          const res = await fetch('/admin/api/mcp/list-tools', {method:'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({})});
           const data = await res.json();
           const el = document.getElementById('logs');
           el.textContent = JSON.stringify(data, null, 2);
@@ -247,8 +316,22 @@
           document.getElementById('logs').textContent = 'Failed to test MCP';
         }
       }
+      async function summarizeLogs(){
+        try{
+          const res = await fetch('/admin/api/ai/summarize-logs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lines:300})});
+          const data = await res.json();
+          document.getElementById('logs-summary').textContent = data.ok ? data.summary : ('Error: '+(data.error||'unknown'));
+        }catch(e){ document.getElementById('logs-summary').textContent = 'Failed to summarize'; }
+      }
+      async function twilioTestSend(){
+        const to = document.getElementById('tw-to').value.trim();
+        const message = document.getElementById('tw-body').value;
+        const res = await fetch('/admin/api/twilio/test-send', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({to, message})});
+        const data = await res.json();
+        document.getElementById('tw-result').textContent = data.ok ? ('Sent SID: '+data.sid+' status: '+(data.status||'-')) : ('Error: '+(data.error||'unknown'));
+      }
       async function addLocalMCP() {
-        const res = await fetch('./api/examples/add-local-mcp', {method:'POST'});
+        const res = await fetch('/admin/api/examples/add-local-mcp', {method:'POST'});
         const data = await res.json();
         document.getElementById('msg').textContent = data.ok ? 'Example MCP server added to config.' : ('Error: '+(data.error||'unknown'));
       }
@@ -280,7 +363,7 @@
         document.getElementById('tools-schema').textContent = JSON.stringify(effective, null, 2);
       }
       async function loadTools() {
-        const res = await fetch('./api/tools');
+        const res = await fetch('/admin/api/tools');
         const data = await res.json();
         if (!data.ok) { document.getElementById('tools-list').textContent = 'Failed to load tools'; return; }
         TOOLS_ALL = data.all || [];
@@ -311,13 +394,13 @@
           }
           payload = names;
         }
-        const r2 = await fetch('./api/tools/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        const r2 = await fetch('/admin/api/tools/enable', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
         const d2 = await r2.json();
         document.getElementById('msg').textContent = d2.ok ? ('Enabled tools updated') : ('Error: '+(d2.error||'unknown'));
         await loadTools();
       }
       async function exportConfig() {
-        const res = await fetch('./api/config/export');
+        const res = await fetch('/admin/api/config/export');
         const data = await res.json();
         const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
         const a = document.createElement('a');
@@ -331,13 +414,27 @@
         const text = await file.text();
         try {
           const payload = JSON.parse(text);
-          const res = await fetch('./api/config/import', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+          const res = await fetch('/admin/api/config/import', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
           const data = await res.json();
           document.getElementById('import-result').textContent = data.ok ? 'Import successful' : ('Error: '+(data.error||'unknown'));
         } catch (err) {
           document.getElementById('import-result').textContent = 'Invalid JSON file';
         }
       });
+      async function askAI(){
+        const q = document.getElementById('ai-q').value||'';
+        const payload = {question:q, include_logs: document.getElementById('ai-logs').checked, include_health: document.getElementById('ai-health').checked, include_tools: document.getElementById('ai-tools').checked};
+        const res = await fetch('/admin/api/ai/ask', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+        const data = await res.json();
+        document.getElementById('ai-answer').textContent = data.ok ? data.answer : ('Error: '+(data.error||'unknown'));
+      }
+      async function fetchModels(){
+        try{
+          const res = await fetch('/admin/api/openai/models');
+          const data = await res.json();
+          document.getElementById('models').textContent = data.ok ? (data.models||[]).join('\n') : ('Error: '+(data.error||'unknown'));
+        }catch(e){ document.getElementById('models').textContent='Failed to load models'; }
+      }
       // On load
       loadAssistantInfo();
       loadHealth();

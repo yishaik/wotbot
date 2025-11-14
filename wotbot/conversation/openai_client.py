@@ -19,10 +19,11 @@ class OpenAIClient:
         log.debug("Calling OpenAI Chat Completions with tools: %s", [t.get("function", {}).get("name") for t in tools])
         resp = self.client.chat.completions.create(
             model=self.model,
-            temperature=0.3,
+            temperature=getattr(settings, 'openai_temperature', 0.3),
             messages=messages,
             tools=tools,
             tool_choice="auto",
+            max_tokens=(getattr(settings, 'openai_max_tokens', 0) or None),
         )
         return resp
 

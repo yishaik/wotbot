@@ -26,6 +26,8 @@ class Settings:
         "ASSISTANT_INSTRUCTIONS",
         "You are WotBot, a WhatsApp assistant. Keep replies concise and mobile-friendly. Use tools when helpful. Prefer bullets and short paragraphs. If output is long, suggest summarizing.",
     )
+    openai_temperature: float = float(os.getenv("OPENAI_TEMPERATURE", "0.3"))
+    openai_max_tokens: int = int(os.getenv("OPENAI_MAX_TOKENS", "600"))
 
     # Admin & Modes
     admin_phone_numbers: List[str] = tuple(
@@ -91,6 +93,8 @@ EDITABLE_FIELDS = {
     "MCP_TOKEN": ("mcp_token", str),
     # Assistant
     "ASSISTANT_INSTRUCTIONS": ("assistant_instructions", str),
+    "OPENAI_TEMPERATURE": ("openai_temperature", float),
+    "OPENAI_MAX_TOKENS": ("openai_max_tokens", int),
     # Tools
     "ENABLED_TOOLS": ("enabled_tools", list),
 }
@@ -101,6 +105,16 @@ def _coerce_value(value: str, typ) -> object:
         return str(value).lower() in {"1", "true", "yes", "y", "on"}
     if typ is list:
         return tuple(v.strip() for v in (value or "").split(",") if v.strip())
+    if typ is int:
+        try:
+            return int(value)
+        except Exception:
+            return 0
+    if typ is float:
+        try:
+            return float(value)
+        except Exception:
+            return 0.0
     return value
 
 

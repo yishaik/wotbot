@@ -45,8 +45,12 @@ def admin_index(request: Request, _: bool = Depends(require_auth)):
     ctx = {
         "OPENAI_API_KEY": _mask(settings.openai_api_key),
         "OPENAI_MODEL": settings.openai_model,
+        "OPENAI_USE_RESPONSES": settings.openai_use_responses,
         "OPENAI_USE_ASSISTANTS": settings.openai_use_assistants,
         "OPENAI_ASSISTANT_ID": settings.openai_assistant_id or "",
+        "ASSISTANT_INSTRUCTIONS": getattr(settings, 'assistant_instructions', '') or '',
+        "OPENAI_TEMPERATURE": getattr(settings, 'openai_temperature', 0.3),
+        "OPENAI_MAX_TOKENS": getattr(settings, 'openai_max_tokens', 600),
         "TWILIO_ACCOUNT_SID": _mask(settings.twilio_account_sid),
         "TWILIO_AUTH_TOKEN": _mask(settings.twilio_auth_token),
         "TWILIO_WHATSAPP_FROM": settings.twilio_whatsapp_from,
@@ -69,8 +73,11 @@ def admin_update(
     OPENAI_API_KEY: str = Form(default=""),
     OPENAI_MODEL: str = Form(default=""),
     OPENAI_USE_ASSISTANTS: str = Form(default="off"),
+    OPENAI_USE_RESPONSES: str = Form(default="off"),
     OPENAI_ASSISTANT_ID: str = Form(default=""),
     ASSISTANT_INSTRUCTIONS: str = Form(default=""),
+    OPENAI_TEMPERATURE: str = Form(default=""),
+    OPENAI_MAX_TOKENS: str = Form(default=""),
     TWILIO_ACCOUNT_SID: str = Form(default=""),
     TWILIO_AUTH_TOKEN: str = Form(default=""),
     TWILIO_WHATSAPP_FROM: str = Form(default=""),
@@ -88,9 +95,14 @@ def admin_update(
     if OPENAI_MODEL:
         overrides["OPENAI_MODEL"] = OPENAI_MODEL.strip()
     overrides["OPENAI_USE_ASSISTANTS"] = "true" if OPENAI_USE_ASSISTANTS == "on" else "false"
+    overrides["OPENAI_USE_RESPONSES"] = "true" if OPENAI_USE_RESPONSES == "on" else "false"
     overrides["OPENAI_ASSISTANT_ID"] = OPENAI_ASSISTANT_ID.strip()
     if ASSISTANT_INSTRUCTIONS:
         overrides["ASSISTANT_INSTRUCTIONS"] = ASSISTANT_INSTRUCTIONS
+    if OPENAI_TEMPERATURE:
+        overrides["OPENAI_TEMPERATURE"] = OPENAI_TEMPERATURE
+    if OPENAI_MAX_TOKENS:
+        overrides["OPENAI_MAX_TOKENS"] = OPENAI_MAX_TOKENS
 
     if TWILIO_ACCOUNT_SID and not TWILIO_ACCOUNT_SID.startswith("••••"):
         overrides["TWILIO_ACCOUNT_SID"] = TWILIO_ACCOUNT_SID.strip()
@@ -185,6 +197,129 @@ def assistant_sync_api(_: bool = Depends(require_auth)):
             apply_overrides(overrides)
             save_overrides(overrides)
             return {"ok": True, "message": f"Assistant created: {asst.id}", "assistant_id": asst.id}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.get("/api/openai/models")
+def api_openai_models(_: bool = Depends(require_auth)):
+    client = OpenAI()
+    try:
+        models = client.models.list()
+        ids = [m.id for m in getattr(models, 'data', [])]
+        return {"ok": True, "models": ids}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/ai/ask")
+def api_ai_ask(_: bool = Depends(require_auth), payload: Dict = Body(...)):
+    from openai import OpenAI
+    from ..tools.schemas import tool_schemas
+    import psutil, platform
+    q = (payload or {}).get("question", "Explain this admin page")
+    include_logs = bool((payload or {}).get("include_logs"))
+    include_health = bool((payload or {}).get("include_health"))
+    include_tools = bool((payload or {}).get("include_tools"))
+
+    # Sanitize config
+    cfg = {
+        "model": settings.openai_model,
+        "use_assistants": settings.openai_use_assistants,
+        "use_responses": settings.openai_use_responses,
+        "public_base_url": settings.public_base_url,
+        "twilio_whatsapp_from": settings.twilio_whatsapp_from,
+        "allow_http_domains": list(settings.allow_http_domains),
+    }
+    logs_text = ""
+    if include_logs:
+        logs = system_tools.read_log("app.log", 120)
+        if logs.get("ok"):
+            logs_text = "\n".join(logs.get("lines", [])[-120:])
+    health = {}
+    if include_health:
+        vm = psutil.virtual_memory()
+        du = psutil.disk_usage("/")
+        health = {
+            "cpu_percent": psutil.cpu_percent(interval=0.0),
+            "memory_percent": vm.percent,
+            "disk_percent": du.percent,
+            "python": platform.python_version(),
+        }
+    tools = []
+    if include_tools:
+        tools = [t["function"] for t in tool_schemas()]
+
+    client = OpenAI()
+    system = (
+        "You are an admin UI assistant for WotBot. Explain settings clearly and concisely. "
+        "Never request or reveal secrets. Use short paragraphs and bullets."
+    )
+    msgs = [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": f"Question: {q}\n\nConfig: {cfg}\nHealth: {health}\nTools: {[t.get('name') for t in tools]}\nLogs(last):\n{logs_text[-2000:]}",
+        },
+    ]
+    try:
+        resp = client.chat.completions.create(model=settings.openai_model, messages=msgs, temperature=0.3, max_tokens=400)
+        answer = resp.choices[0].message.content or "(no content)"
+        return {"ok": True, "answer": answer}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/ai/summarize-logs")
+def api_ai_summarize_logs(_: bool = Depends(require_auth), payload: Dict = Body(default={})):  # type: ignore[assignment]
+    lines = int((payload or {}).get("lines") or 300)
+    lines = max(50, min(1000, lines))
+    logs = system_tools.read_log("app.log", lines)
+    if not logs.get("ok"):
+        return JSONResponse({"ok": False, "error": logs.get("error", "log read failed")}, status_code=500)
+    text = "\n".join(logs.get("lines", []))
+    client = OpenAI()
+    prompt = (
+        "Summarize the following application logs. Focus on:\n"
+        "- Errors, exceptions, tracebacks (with probable causes)\n"
+        "- Warnings and intermittent failures\n"
+        "- Recent successful operations\n"
+        "Respond with short bullet points suitable for an admin."
+    )
+    try:
+        resp = client.chat.completions.create(
+            model=settings.openai_model,
+            temperature=0.2,
+            max_tokens=400,
+            messages=[
+                {"role": "system", "content": "You are a helpful SRE summarizer."},
+                {"role": "user", "content": f"{prompt}\n\nLogs (last {lines} lines):\n{text[-8000:]}"},
+            ],
+        )
+        answer = resp.choices[0].message.content or "(no summary)"
+        return {"ok": True, "summary": answer}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
+@router.post("/api/twilio/test-send")
+def api_twilio_test_send(_: bool = Depends(require_auth), payload: Dict = Body(...)):
+    to = (payload or {}).get("to", "").strip()
+    message = (payload or {}).get("message", "Test: hello from WotBot").strip()
+    if not settings.twilio_account_sid or not settings.twilio_auth_token:
+        return JSONResponse({"ok": False, "error": "Twilio credentials not configured"}, status_code=400)
+    if not settings.twilio_whatsapp_from:
+        return JSONResponse({"ok": False, "error": "TWILIO_WHATSAPP_FROM not set"}, status_code=400)
+    if not to:
+        return JSONResponse({"ok": False, "error": "Missing 'to'"}, status_code=400)
+    if not to.startswith("whatsapp:"):
+        to = f"whatsapp:{to}"
+    try:
+        from twilio.rest import Client as TwilioClient
+
+        client = TwilioClient(settings.twilio_account_sid, settings.twilio_auth_token)
+        msg = client.messages.create(body=message[:1400], from_=settings.twilio_whatsapp_from, to=to)
+        return {"ok": True, "sid": msg.sid, "status": getattr(msg, 'status', None)}
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
