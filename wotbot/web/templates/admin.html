@@ -202,14 +202,18 @@
         <div class="card span-12" data-section="mcp" style="display:none;">
           <h2>MCP Configuration</h2>
           <div class="desc">Configure MCP servers and test connectivity. Use comma-separated URLs. The MCP token is sent as Bearer when provided.</div>
-          <div class="row"><label for="MCP_SERVERS">MCP Servers</label><input type="text" id="MCP_SERVERS" name="MCP_SERVERS" value="{{ MCP_SERVERS }}" form="cfg-form"/></div>
+          <input type="hidden" id="MCP_SERVERS" name="MCP_SERVERS" value="{{ MCP_SERVERS }}" form="cfg-form"/>
           <div class="row"><label for="MCP_TOKEN">MCP Token</label><input type="password" id="MCP_TOKEN" name="MCP_TOKEN" value="{{ MCP_TOKEN }}" form="cfg-form"/></div>
+          <div class="row"><label>Servers</label>
+            <div style="width:100%">
+              <div id="mcp-rows"></div>
+              <div class="actions" style="margin-top:6px"><button class="btn" type="button" onclick="mcpAddRow()">Add Server</button></div>
+            </div>
+          </div>
           <div class="actions" style="margin:10px 0;">
             <button class="btn" type="submit" form="cfg-form">Save MCP Settings</button>
-            <button class="btn" onclick="addLocalMCP()">Add Local Example MCP</button>
-            <button class="btn" onclick="testMCP()">Test MCP</button>
+            <button class="btn" onclick="addLocalMCP()" type="button">Add Local Example MCP</button>
           </div>
-          <div id="mcp-result" class="code"></div>
           <div class="hint">Tip: Run the example MCP locally: <code>python examples/mcp_echo_server.py --host 127.0.0.1 --port 9010</code></div>
         </div>
         <div class="card span-12" data-section="twilio" style="display:none;">
@@ -330,6 +334,58 @@
           el.textContent = 'Failed to test MCP';
         }
       }
+      function mcpRowTemplate(idx, value){
+        const safe = value || '';
+        return `<div class="row" data-idx="${idx}">
+          <label>Server ${idx+1}</label>
+          <div>
+            <input type="text" class="mcp-url" value="${safe}" style="width:100%"/>
+            <div class="actions" style="margin-top:6px;">
+              <button class="btn" type="button" onclick="mcpValidate(${idx})">Validate</button>
+              <button class="btn" type="button" onclick="mcpListTools(${idx})">List Tools</button>
+              <button class="btn danger" type="button" onclick="mcpRemove(${idx})">Remove</button>
+            </div>
+            <div class="code" id="mcp-result-${idx}"></div>
+          </div>
+        </div>`;
+      }
+      function mcpRenderRows(list){
+        const box = document.getElementById('mcp-rows');
+        box.innerHTML = '';
+        list.forEach((v,i)=>{ const wrap = document.createElement('div'); wrap.innerHTML = mcpRowTemplate(i, v); box.appendChild(wrap.firstChild); });
+      }
+      function mcpGetList(){
+        const rows = Array.from(document.querySelectorAll('#mcp-rows .row'));
+        return rows.map(r=>{ const input = r.querySelector('.mcp-url'); return (input && input.value.trim()) || ''; }).filter(Boolean);
+      }
+      function mcpAddRow(){
+        const list = mcpGetList(); list.push(''); mcpRenderRows(list);
+      }
+      function mcpRemove(idx){
+        const list = mcpGetList(); list.splice(idx,1); mcpRenderRows(list);
+      }
+      async function mcpValidate(idx){
+        const list = mcpGetList(); const url = list[idx];
+        const res = await fetch('/admin/api/mcp/validate', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(url)});
+        const data = await res.json();
+        document.getElementById('mcp-result-'+idx).textContent = data.ok ? ('OK: '+(data.tools_count||0)+' tools') : ('Error: '+(data.error||'unknown'));
+      }
+      async function mcpListTools(idx){
+        const list = mcpGetList(); const url = list[idx];
+        const res = await fetch('/admin/api/mcp/list-tools', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(url)});
+        const data = await res.json();
+        document.getElementById('mcp-result-'+idx).textContent = JSON.stringify(data, null, 2);
+      }
+      // Serialize MCP servers into hidden field on save
+      document.getElementById('cfg-form').addEventListener('submit', (e)=>{
+        const list = mcpGetList();
+        document.getElementById('MCP_SERVERS').value = list.join(',');
+      });
+      // Initialize MCP rows from current value
+      (function(){
+        const current = (document.getElementById('MCP_SERVERS').value||'').split(',').map(s=>s.trim()).filter(Boolean);
+        mcpRenderRows(current.length? current : ['']);
+      })();
       async function summarizeLogs(){
         try{
           const res = await fetch('/admin/api/ai/summarize-logs', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({lines:300})});

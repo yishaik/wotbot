@@ -354,6 +354,35 @@ def api_mcp_list_tools(server: str | None = Body(default=None), _: bool = Depend
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
+@router.post("/api/mcp/validate")
+def api_mcp_validate(server: str = Body(...), _: bool = Depends(require_auth)):
+    try:
+        servers = list(settings.mcp_servers)
+        chosen = None
+        # Allow index or URL
+        try:
+            idx = int(server)
+            if 0 <= idx < len(servers):
+                chosen = servers[idx]
+        except Exception:
+            pass
+        if chosen is None:
+            for s in servers:
+                if s.rstrip('/') == server.rstrip('/'):
+                    chosen = s
+                    break
+        if chosen is None:
+            # Try validating the given URL directly without being in settings
+            chosen = server
+        client = mcp_client.MCPHttpClient(chosen, settings.mcp_token)
+        res = client.list_tools()
+        if res.get("ok"):
+            return {"ok": True, "server": chosen, "tools_count": len(res.get("result", []) if isinstance(res.get("result"), list) else [])}
+        return JSONResponse({"ok": False, "server": chosen, "error": res.get("error")}, status_code=502)
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
+
+
 @router.get("/api/logs")
 def api_logs(path: str = Query(default="app.log"), lines: int = Query(default=200, ge=1, le=1000), _: bool = Depends(require_auth)):
     return system_tools.read_log(path, lines)
