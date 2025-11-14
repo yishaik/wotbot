@@ -13,6 +13,8 @@ An advanced WhatsApp bot built with FastAPI, Twilio, and OpenAI tool-calling. It
   - Safe system management: read logs/configs, basic system metrics, self-restart hook.
 - Commands: `/help`, `/status`, `/restart_bot` (admin), `/tools`, `/mode dev|normal`, `/admin/status`, `/admin/restart`.
 - Observability: rotating file logs, `/health` endpoint.
+- WhatsApp images: media are fetched via Twilio and passed to the model (as data URLs) with the caption.
+- Tabbed Admin UI: Configuration, OpenAI, Tools, Twilio, System, Import/Export, AI Assistant.
 
 ## Project Structure
 
@@ -66,6 +68,8 @@ pip install -r requirements.txt
 - Optional: `ADMIN_PHONE_NUMBERS` (comma-separated full WhatsApp numbers like `whatsapp:+1...`)
 - Optional: Admin Web: `ADMIN_WEB_USERNAME`, `ADMIN_WEB_PASSWORD` to enable the admin UI at `/admin`.
 - Optional: `OPENAI_USE_ASSISTANTS=true` to use the Assistants API.
+- Optional: `OPENAI_USE_RESPONSES=true` to prefer the Responses API (falls back to Chat on error).
+- Optional: `OPENAI_TEMPERATURE` (e.g., `0.3`) and `OPENAI_MAX_TOKENS` (e.g., `600`).
 
 3. Create directories:
 
@@ -98,7 +102,9 @@ Set `PUBLIC_BASE_URL` in `.env` to your ngrok URL.
 
 3. Send a WhatsApp message to your sandbox or number. You should get a reply from the bot.
 
-The bot responds asynchronously: the webhook returns 200 OK immediately, and replies are sent via Twilio's REST API, avoiding webhook timeouts.
+The bot responds asynchronously: the webhook returns quickly, and replies are sent via Twilio's REST API, avoiding webhook timeouts.
+
+Images: sending a photo with an optional caption is supported. The bot fetches media via your Twilio credentials, embeds it as a data URL, and includes it in the model input along with your caption.
 
 ## Commands
 
@@ -118,7 +124,9 @@ The bot responds asynchronously: the webhook returns 200 OK immediately, and rep
 
 Assistants API: enable by setting `OPENAI_USE_ASSISTANTS=true`. The bot creates an Assistant with function tools on first use (or uses `OPENAI_ASSISTANT_ID` if provided). Tool calls are handled via `runs.submit_tool_outputs`.
 
-Chat Completions fallback: if `OPENAI_USE_ASSISTANTS=false`, the bot uses Chat Completions with function calling (the default).
+Responses API: set `OPENAI_USE_RESPONSES=true` to prefer OpenAI Responses. The engine formats inputs using the required types (`input_text`, `input_image`, `output_text`), executes tool calls by submitting outputs, and extracts the final message. If Responses errors or is unavailable, the engine falls back to Chat Completions automatically.
+
+Chat Completions: if `OPENAI_USE_ASSISTANTS=false` and `OPENAI_USE_RESPONSES=false`, the bot uses Chat Completions with function calling (the default).
 
 ## Tools
 
@@ -199,8 +207,38 @@ WantedBy=multi-user.target
 
 - Enable by setting `ADMIN_WEB_USERNAME` and `ADMIN_WEB_PASSWORD`.
 - Visit `/admin` and authenticate via HTTP Basic.
-- You can update keys and settings at runtime; they persist to `data/config/settings.json`.
-- Secrets are masked; leave blank to keep existing values.
+- Tab overview:
+  - Configuration: base settings, WhatsApp from, PUBLIC_BASE_URL, toggles for Assistants and Responses.
+  - OpenAI: model controls (Temperature, Max Tokens), fetch model IDs.
+  - Tools: per-tool enable/disable with live effective schema preview, Sync tools to OpenAI Assistant.
+  - Twilio: Send a test WhatsApp message to verify delivery (shows SID/status).
+  - System: Health, live logs, “Summarize Logs (AI)” to get bullet-point summaries of recent logs.
+  - Import/Export: export overrides to JSON and import from JSON.
+- Changes persist to `data/config/settings.json`. Secrets are masked in UI; leave them blank to keep existing values.
+
+## How-To
+
+- Verify Twilio delivery:
+  - Admin → Twilio → fill “To number” (e.g., `whatsapp:+1...`) and click “Send Test”.
+  - Check result for SID and status.
+
+- Summarize recent logs:
+  - Admin → System → “Summarize Logs (AI)”.
+  - The summary highlights errors, warnings, and successes.
+
+- Enable Responses API:
+  - Admin → Configuration → toggle “Use Responses” and Save.
+  - The engine prefers Responses and will fall back to Chat on error.
+
+- Handle images:
+  - Send a photo with caption to your WhatsApp number. The model receives the image and caption.
+
+- Fetch OpenAI model list:
+  - Admin → OpenAI → “Fetch Models”.
+
+- Export/Import configuration:
+  - Admin → Import/Export → Export Config to download JSON.
+  - Import Config to load a saved JSON (secrets not included).
 
 ## Security Considerations
 
