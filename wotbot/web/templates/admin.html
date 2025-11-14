@@ -201,7 +201,7 @@
         </div>
         <div class="card span-12" data-section="mcp" style="display:none;">
           <h2>MCP Configuration</h2>
-          <div class="desc">Configure MCP servers and test connectivity. Use comma-separated URLs. The MCP token is sent as Bearer when provided.</div>
+          <div class="desc">Configure MCP servers and test connectivity. Use HTTP JSON-RPC URLs (e.g., <code>http://127.0.0.1:9010/jsonrpc</code>) or local command paths (e.g., <code>/home/user/.bin/mcp-weather --flag</code>). For HTTP, the MCP token is sent as Bearer if provided.</div>
           <input type="hidden" id="MCP_SERVERS" name="MCP_SERVERS" value="{{ MCP_SERVERS }}" form="cfg-form"/>
           <div class="row"><label for="MCP_TOKEN">MCP Token</label><input type="password" id="MCP_TOKEN" name="MCP_TOKEN" value="{{ MCP_TOKEN }}" form="cfg-form"/></div>
           <div class="row"><label>Servers</label>
@@ -212,9 +212,7 @@
           </div>
           <div class="actions" style="margin:10px 0;">
             <button class="btn" type="submit" form="cfg-form">Save MCP Settings</button>
-            <button class="btn" onclick="addLocalMCP()" type="button">Add Local Example MCP</button>
           </div>
-          <div class="hint">Tip: Run the example MCP locally: <code>python examples/mcp_echo_server.py --host 127.0.0.1 --port 9010</code></div>
         </div>
         <div class="card span-12" data-section="twilio" style="display:none;">
           <h2>Twilio</h2>

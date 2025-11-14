@@ -10,8 +10,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..config import settings, apply_overrides, save_overrides
 from ..tools import system_tools
 from ..tools import mcp_client
+from ..tools.mcp_exec_client import MCPExecClient
 from ..tools.schemas import tool_schemas, all_tool_schemas
 from openai import OpenAI
+from urllib.parse import urlparse
 
 log = logging.getLogger(__name__)
 router = APIRouter()
@@ -345,8 +347,13 @@ def api_mcp_list_tools(server: str | None = Body(default=None), _: bool = Depend
                         break
             if chosen is None:
                 return JSONResponse({"ok": False, "error": f"Unknown MCP server: {server}"}, status_code=400)
-            client = mcp_client.MCPHttpClient(chosen, settings.mcp_token)
-            res = client.list_tools()
+            if urlparse(chosen).scheme in ("http", "https"):
+                client = mcp_client.MCPHttpClient(chosen, settings.mcp_token)
+                res = client.list_tools()
+            else:
+                # Treat as local exec command (split by whitespace)
+                cmd = chosen.split()
+                res = MCPExecClient(cmd).list_tools()
             return res
         else:
             return mcp_client.mcp_list_all()
@@ -374,8 +381,12 @@ def api_mcp_validate(server: str = Body(...), _: bool = Depends(require_auth)):
         if chosen is None:
             # Try validating the given URL directly without being in settings
             chosen = server
-        client = mcp_client.MCPHttpClient(chosen, settings.mcp_token)
-        res = client.list_tools()
+        if urlparse(chosen).scheme in ("http", "https"):
+            client = mcp_client.MCPHttpClient(chosen, settings.mcp_token)
+            res = client.list_tools()
+        else:
+            cmd = chosen.split()
+            res = MCPExecClient(cmd).list_tools()
         if res.get("ok"):
             return {"ok": True, "server": chosen, "tools_count": len(res.get("result", []) if isinstance(res.get("result"), list) else [])}
         return JSONResponse({"ok": False, "server": chosen, "error": res.get("error")}, status_code=502)
@@ -418,17 +429,7 @@ def api_config_import(_: bool = Depends(require_auth), payload: dict = Body(...)
         return JSONResponse({"ok": False, "error": str(e)}, status_code=500)
 
 
-@router.post("/api/examples/add-local-mcp")
-def api_examples_add_local_mcp(_: bool = Depends(require_auth)):
-    # Adds the local example MCP server URL to MCP_SERVERS
-    url = "http://127.0.0.1:9010/jsonrpc"
-    servers = list(settings.mcp_servers)
-    if url not in servers:
-        servers.append(url)
-    overrides = {"MCP_SERVERS": ",".join(servers)}
-    apply_overrides(overrides)
-    save_overrides(overrides)
-    return {"ok": True, "servers": servers}
+# removed example MCP endpoint
 
 
 @router.get("/api/tools")
