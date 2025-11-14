@@ -30,3 +30,15 @@ The format is inspired by Keep a Changelog and Semantic Versioning.
 
 [0.2.0]: https://github.com/yishaik/wotbot/releases/tag/v0.2.0
 [0.1.0]: https://github.com/yishaik/wotbot/releases/tag/v0.1.0
+[0.3.0] - 2025-11-14
+### Added
+- Tabbed Admin UI: Configuration, OpenAI, Tools, Twilio, System, Import/Export, AI Assistant.
+- Twilio test send endpoint and UI to verify WhatsApp delivery.
+- AI-powered log summarizer and admin assistant for explanations.
+- Image intake from WhatsApp (media fetched via Twilio, sent as data URLs).
+- Responses API flow with proper input formatting and tool-output loop; chat fallback retained.
+- OpenAI controls (temperature, max tokens) and model fetch list.
+
+### Fixed
+- NameError in engine for typed content path when Assistants is enabled.
+- Admin UI 404s by switching to absolute admin API routes.
